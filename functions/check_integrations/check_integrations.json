@@ -1,0 +1,60 @@
+{
+  "name": "check_integrations",
+  "description": "Checks which integration accounts are currently connected for this user. Call this before any external action (send email, post Slack, book calendar) so you know what is available and can inform the user if something needs to be connected first.",
+  "icon_url": null,
+  "config": null,
+  "visibility": "POD",
+  "code": "#input_type_name: CheckIntegrationsInput\n#output_type_name: CheckIntegrationsResult\n#function_name: check_integrations\n\nimport os\nfrom pydantic import BaseModel\nfrom lemma_sdk import FunctionContext\n\ntry:\n    import httpx\n    _HAS_HTTPX = True\nexcept ImportError:\n    _HAS_HTTPX = False\n\n\nclass CheckIntegrationsInput(BaseModel):\n    apps: list[str] = [\"slack\", \"telegram\", \"gmail\", \"googlecalendar\", \"outlook\"]\n\n\nclass CheckIntegrationsResult(BaseModel):\n    connected: list[str]\n    not_connected: list[str]\n    summary: str\n\n\nasync def _get_org_id(base_url: str, pod_id: str, headers: dict) -> str:\n    try:\n        async with httpx.AsyncClient(timeout=10) as client:\n            resp = await client.get(f\"{base_url}/pods/{pod_id}\", headers=headers)\n            org_id = resp.json().get(\"organization_id\", \"\")\n            if not org_id:\n                raise RuntimeError(\"Pod response did not contain organization_id\")\n            return org_id\n    except Exception as e:\n        raise RuntimeError(f\"Could not resolve org_id from pod: {e}\")\n\n\nasync def check_integrations(ctx: FunctionContext, data: CheckIntegrationsInput) -> CheckIntegrationsResult:\n    connected: list[str] = []\n    not_connected: list[str] = []\n\n    base_url = os.environ.get(\"LEMMA_BASE_URL\", \"https://api.lemma.work\")\n    token = os.environ.get(\"LEMMA_TOKEN\", \"\")\n\n    if _HAS_HTTPX and token:\n        try:\n            headers = {\"Authorization\": f\"Bearer {token}\"}\n            org_id = await _get_org_id(base_url, ctx.pod_id, headers)\n            async with httpx.AsyncClient() as client:\n                resp = await client.get(\n                    f\"{base_url}/organizations/{org_id}/integrations/accounts\",\n                    headers=headers,\n                    timeout=10.0,\n                )\n                if resp.status_code == 200:\n                    items = resp.json().get(\"items\", [])\n                    connected_app_ids = {\n                        item[\"application_id\"]\n                        for item in items\n                        if item.get(\"status\") == \"CONNECTED\"\n                    }\n                    for app in data.apps:\n                        if app in connected_app_ids:\n                            connected.append(app)\n                        else:\n                            not_connected.append(app)\n                else:\n                    not_connected = list(data.apps)\n        except Exception:\n            not_connected = list(data.apps)\n    else:\n        not_connected = list(data.apps)\n\n    if connected and not_connected:\n        summary = f\"Connected: {', '.join(connected)}. Not connected: {', '.join(not_connected)}.\"\n    elif connected:\n        summary = f\"All checked apps connected: {', '.join(connected)}.\"\n    else:\n        summary = (\n            f\"No apps connected yet: {', '.join(not_connected)}. \"\n            \"Ask the user to connect the needed integration before proceeding.\"\n        )\n\n    return CheckIntegrationsResult(\n        connected=connected,\n        not_connected=not_connected,\n        summary=summary,\n    )\n",
+  "type": "API",
+  "input_schema": {
+    "type": "object",
+    "title": "CheckIntegrationsInput",
+    "properties": {
+      "apps": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Apps",
+        "default": [
+          "slack",
+          "telegram",
+          "gmail",
+          "googlecalendar",
+          "outlook"
+        ]
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "title": "CheckIntegrationsResult",
+    "required": [
+      "connected",
+      "not_connected",
+      "summary"
+    ],
+    "properties": {
+      "summary": {
+        "type": "string",
+        "title": "Summary"
+      },
+      "connected": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Connected"
+      },
+      "not_connected": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Not Connected"
+      }
+    }
+  },
+  "config_schema": null,
+  "python_packages": []
+}
