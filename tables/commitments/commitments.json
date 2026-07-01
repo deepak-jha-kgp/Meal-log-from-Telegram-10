@@ -1,0 +1,154 @@
+{
+  "name": "commitments",
+  "primary_key_column": "id",
+  "columns": [
+    {
+      "name": "id",
+      "type": "UUID",
+      "required": true,
+      "unique": true,
+      "auto": true,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "title",
+      "type": "TEXT",
+      "description": "Short description of the commitment",
+      "required": true,
+      "unique": false,
+      "max_length": 300,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "type",
+      "type": "ENUM",
+      "description": "to_others = user owes someone; from_others = someone owes user; habit = personal recurring commitment; calendar = scheduled event",
+      "required": true,
+      "unique": false,
+      "options": [
+        "to_others",
+        "from_others",
+        "habit",
+        "calendar"
+      ],
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "description",
+      "type": "TEXT",
+      "description": "Additional context or notes about the commitment",
+      "required": false,
+      "unique": false,
+      "max_length": 2000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "person_id",
+      "type": "UUID",
+      "description": "Reference to a row in the people table \u2014 who this commitment involves",
+      "required": false,
+      "unique": false,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "due_date",
+      "type": "DATE",
+      "description": "When this commitment is due or scheduled (also the event date for calendar type)",
+      "required": false,
+      "unique": false,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "preferred_time",
+      "type": "TEXT",
+      "description": "HH:MM \u2014 start time for habits and calendar events",
+      "required": false,
+      "unique": false,
+      "max_length": 10,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "end_time",
+      "type": "TEXT",
+      "description": "HH:MM \u2014 end time for calendar events",
+      "required": false,
+      "unique": false,
+      "max_length": 10,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "recurrence",
+      "type": "ENUM",
+      "description": "For habits: how often this repeats",
+      "required": false,
+      "unique": false,
+      "default": "none",
+      "options": [
+        "none",
+        "daily",
+        "weekly",
+        "monthly"
+      ],
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "status",
+      "type": "ENUM",
+      "description": "Current lifecycle state of this commitment",
+      "required": true,
+      "unique": false,
+      "default": "active",
+      "options": [
+        "active",
+        "completed",
+        "missed",
+        "snoozed"
+      ],
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "external_ref",
+      "type": "TEXT",
+      "description": "Calendar event ID or other external reference",
+      "required": false,
+      "unique": false,
+      "max_length": 500,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "notes",
+      "type": "TEXT",
+      "description": "Any extra context the user has added",
+      "required": false,
+      "unique": false,
+      "max_length": 2000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    }
+  ],
+  "config": null,
+  "enable_rls": true,
+  "visibility": "POD"
+}
