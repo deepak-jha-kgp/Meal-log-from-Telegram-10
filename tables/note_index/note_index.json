@@ -1,0 +1,93 @@
+{
+  "name": "note_index",
+  "primary_key_column": "id",
+  "columns": [
+    {
+      "name": "id",
+      "type": "UUID",
+      "required": true,
+      "unique": true,
+      "auto": true,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "title",
+      "type": "TEXT",
+      "description": "Title of the note",
+      "required": true,
+      "unique": false,
+      "max_length": 300,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "summary",
+      "type": "TEXT",
+      "description": "One-sentence description of what this note contains \u2014 used to decide which note to fetch",
+      "required": true,
+      "unique": false,
+      "max_length": 500,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "keywords",
+      "type": "TEXT",
+      "description": "Comma-separated keywords for quick lookup",
+      "required": false,
+      "unique": false,
+      "max_length": 500,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "category",
+      "type": "ENUM",
+      "description": "User-defined note category",
+      "required": false,
+      "unique": false,
+      "default": "other",
+      "options": [
+        "idea",
+        "content",
+        "meeting",
+        "reference",
+        "task",
+        "personal",
+        "other"
+      ],
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "file_path",
+      "type": "FILE_PATH",
+      "description": "Path to the markdown file under /pod/notes/",
+      "required": true,
+      "unique": false,
+      "max_length": 700,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "notes",
+      "type": "TEXT",
+      "description": "Any extra metadata about this note",
+      "required": false,
+      "unique": false,
+      "max_length": 1000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    }
+  ],
+  "config": null,
+  "enable_rls": true,
+  "visibility": "POD"
+}
