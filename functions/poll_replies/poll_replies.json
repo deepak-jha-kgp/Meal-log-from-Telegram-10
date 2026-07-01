@@ -1,0 +1,45 @@
+{
+  "name": "poll_replies",
+  "description": "Checks Gmail threads and Slack threads for replies to pings sent in the last N days. Writes new replies to ping_replies and marks replied_at on pings. Called by the poll_replies_cron schedule every 2 hours.",
+  "icon_url": null,
+  "config": null,
+  "visibility": "POD",
+  "code": "#input_type_name: PollRepliesInput\n#output_type_name: PollRepliesResult\n#function_name: poll_replies\n\nimport os\nimport httpx\nfrom pydantic import BaseModel\nfrom lemma_sdk import FunctionContext, Pod\nfrom datetime import datetime, timezone, timedelta\n\n\nclass PollRepliesInput(BaseModel):\n    max_age_days: int = 7\n\n\nclass PollRepliesResult(BaseModel):\n    checked: int\n    new_replies: int\n    errors: int\n\n\nasync def _get_org_id(base_url: str, pod_id: str, headers: dict) -> str:\n    try:\n        async with httpx.AsyncClient(timeout=10) as client:\n            resp = await client.get(f\"{base_url}/pods/{pod_id}\", headers=headers)\n            org_id = resp.json().get(\"organization_id\", \"\")\n            if not org_id:\n                raise RuntimeError(\"Pod response did not contain organization_id\")\n            return org_id\n    except Exception as e:\n        raise RuntimeError(f\"Could not resolve org_id from pod: {e}\")\n\n\nasync def _exec_integration(base_url: str, org_id: str, headers: dict,\n                             integration: str, operation: str, payload: dict) -> dict:\n    async with httpx.AsyncClient(timeout=15) as client:\n        resp = await client.post(\n            f\"{base_url}/organizations/{org_id}/integrations/{integration}/operations/{operation}/execute\",\n            json={\"payload\": payload},\n            headers=headers,\n        )\n        if resp.status_code != 200:\n            raise RuntimeError(f\"[{resp.status_code}] {resp.text[:300]}\")\n        return resp.json().get(\"result\", {})\n\n\nasync def poll_replies(ctx: FunctionContext, data: PollRepliesInput) -> PollRepliesResult:\n    pod = Pod.from_env()\n    base_url = os.environ.get(\"LEMMA_BASE_URL\", \"https://api.lemma.work\")\n    token    = os.environ.get(\"LEMMA_TOKEN\", \"\")\n    headers  = {\"Authorization\": f\"Bearer {token}\", \"Content-Type\": \"application/json\"}\n\n    try:\n        org_id = await _get_org_id(base_url, ctx.pod_id, headers)\n    except RuntimeError:\n        return PollRepliesResult(checked=0, new_replies=0, errors=1)\n\n    cutoff = (datetime.now(timezone.utc) - timedelta(days=data.max_age_days)).strftime(\n        \"%Y-%m-%dT%H:%M:%SZ\"\n    )\n\n    pings = pod.records.list(\n        \"pings\",\n        filter=[\"replied_at IS NULL\", f\"created_at > '{cutoff}'\"],\n        limit=50,\n    ).to_dict().get(\"items\", [])\n\n    existing_replies = pod.records.list(\"ping_replies\", limit=500).to_dict().get(\"items\", [])\n    replied_ping_ids: set[str] = {str(r.get(\"ping_id\")) for r in existing_replies}\n\n    checked    = 0\n    new_replies = 0\n    errors     = 0\n\n    for ping in pings:\n        ping_id = str(ping.get(\"id\"))\n        channel = ping.get(\"channel\")\n\n        try:\n            found: list[dict] = []\n\n            if channel == \"slack\":\n                slack_ch = ping.get(\"slack_channel_id\")\n                slack_ts = ping.get(\"slack_thread_ts\")\n                if not slack_ch or not slack_ts:\n                    continue\n\n                raw = await _exec_integration(base_url, org_id, headers,\n                                              \"slack\", \"conversations_replies\",\n                                              {\"channel\": slack_ch, \"ts\": slack_ts})\n                for msg in (raw.get(\"messages\") or [])[1:]:\n                    body = (msg.get(\"text\") or \"\").strip()\n                    if body:\n                        found.append({\"body\": body, \"received_at\": msg.get(\"ts\", \"\")})\n\n            elif channel == \"gmail\":\n                thread_id = ping.get(\"gmail_thread_id\")\n                if not thread_id:\n                    continue\n\n                raw = await _exec_integration(base_url, org_id, headers,\n                                              \"gmail\", \"GMAIL_FETCH_MESSAGE_BY_THREAD_ID\",\n                                              {\"thread_id\": thread_id})\n                for msg in (raw.get(\"messages\") or [])[1:]:\n                    body = (msg.get(\"snippet\") or \"\").strip()\n                    date = msg.get(\"internalDate\") or datetime.now(timezone.utc).isoformat()\n                    if body:\n                        found.append({\"body\": body, \"received_at\": str(date)})\n\n            checked += 1\n\n            if found and ping_id not in replied_ping_ids:\n                for r in found:\n                    pod.table(\"ping_replies\").create({\n                        \"ping_id\":     ping_id,\n                        \"body\":        r[\"body\"],\n                        \"received_at\": r[\"received_at\"],\n                    })\n                pod.table(\"pings\").update(ping_id, {\n                    \"replied_at\": datetime.now(timezone.utc).isoformat()\n                })\n                new_replies += len(found)\n\n        except Exception as e:\n            print(f\"Error polling ping {ping_id}: {e}\")\n            errors += 1\n\n    return PollRepliesResult(checked=checked, new_replies=new_replies, errors=errors)\n",
+  "type": "JOB",
+  "input_schema": {
+    "type": "object",
+    "title": "PollRepliesInput",
+    "properties": {
+      "max_age_days": {
+        "type": "integer",
+        "title": "Max Age Days",
+        "default": 7
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "title": "PollRepliesResult",
+    "required": [
+      "checked",
+      "new_replies",
+      "errors"
+    ],
+    "properties": {
+      "errors": {
+        "type": "integer",
+        "title": "Errors"
+      },
+      "checked": {
+        "type": "integer",
+        "title": "Checked"
+      },
+      "new_replies": {
+        "type": "integer",
+        "title": "New Replies"
+      }
+    }
+  },
+  "config_schema": null,
+  "python_packages": []
+}
