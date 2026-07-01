@@ -1,0 +1,53 @@
+{
+  "name": "ping_replies",
+  "primary_key_column": "id",
+  "columns": [
+    {
+      "name": "id",
+      "type": "UUID",
+      "required": true,
+      "unique": true,
+      "auto": true,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "ping_id",
+      "type": "UUID",
+      "description": "FK to the pings table",
+      "required": true,
+      "unique": false,
+      "foreign_key": {
+        "references": "pings.id"
+      },
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "body",
+      "type": "TEXT",
+      "description": "Reply text content",
+      "required": true,
+      "unique": false,
+      "max_length": 4000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "received_at",
+      "type": "TEXT",
+      "description": "When the reply was received \u2014 stored as string to handle Slack ts and ISO formats",
+      "required": false,
+      "unique": false,
+      "max_length": 100,
+      "auto": false,
+      "system": false,
+      "computed": false
+    }
+  ],
+  "config": null,
+  "enable_rls": true,
+  "visibility": "POD"
+}
