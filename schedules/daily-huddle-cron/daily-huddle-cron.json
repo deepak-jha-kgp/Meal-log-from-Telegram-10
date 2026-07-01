@@ -1,0 +1,12 @@
+{
+  "name": "daily-huddle-cron",
+  "schedule_type": "TIME",
+  "agent_name": null,
+  "workflow_name": "daily-huddle",
+  "config": {
+    "cron": "0 8 * * 1-5"
+  },
+  "filter_instruction": null,
+  "filter_output_schema": null,
+  "visibility": "POD"
+}
