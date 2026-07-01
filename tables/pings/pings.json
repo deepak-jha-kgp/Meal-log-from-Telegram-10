@@ -1,0 +1,106 @@
+{
+  "name": "pings",
+  "primary_key_column": "id",
+  "columns": [
+    {
+      "name": "id",
+      "type": "UUID",
+      "required": true,
+      "unique": true,
+      "auto": true,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "commitment_id",
+      "type": "UUID",
+      "description": "Optional FK to commitments \u2014 null for keeper-initiated pings",
+      "required": false,
+      "unique": false,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "person_id",
+      "type": "UUID",
+      "description": "FK to people \u2014 who was pinged",
+      "required": true,
+      "unique": false,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "channel",
+      "type": "ENUM",
+      "description": "Which channel the ping was sent through",
+      "required": true,
+      "unique": false,
+      "options": [
+        "slack",
+        "gmail"
+      ],
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "message",
+      "type": "TEXT",
+      "description": "The message body that was sent",
+      "required": true,
+      "unique": false,
+      "max_length": 2000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "slack_channel_id",
+      "type": "TEXT",
+      "description": "Slack DM channel ID \u2014 needed for reply polling",
+      "required": false,
+      "unique": false,
+      "max_length": 100,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "slack_thread_ts",
+      "type": "TEXT",
+      "description": "Slack message timestamp \u2014 acts as thread ID for reply polling",
+      "required": false,
+      "unique": false,
+      "max_length": 100,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "gmail_thread_id",
+      "type": "TEXT",
+      "description": "Gmail thread ID \u2014 needed for reply polling",
+      "required": false,
+      "unique": false,
+      "max_length": 200,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "replied_at",
+      "type": "DATETIME",
+      "description": "When the first reply was detected \u2014 null until reply arrives",
+      "required": false,
+      "unique": false,
+      "auto": false,
+      "system": false,
+      "computed": false
+    }
+  ],
+  "config": null,
+  "enable_rls": true,
+  "visibility": "POD"
+}
