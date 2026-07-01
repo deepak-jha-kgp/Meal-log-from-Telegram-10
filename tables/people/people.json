@@ -1,0 +1,106 @@
+{
+  "name": "people",
+  "primary_key_column": "id",
+  "columns": [
+    {
+      "name": "id",
+      "type": "UUID",
+      "required": true,
+      "unique": true,
+      "auto": true,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "name",
+      "type": "TEXT",
+      "description": "Full name of the person",
+      "required": true,
+      "unique": false,
+      "max_length": 200,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "nickname",
+      "type": "TEXT",
+      "description": "Short name or first name used in the UI",
+      "required": false,
+      "unique": false,
+      "max_length": 100,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "email",
+      "type": "TEXT",
+      "description": "Primary email address",
+      "required": false,
+      "unique": false,
+      "max_length": 300,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "phone",
+      "type": "TEXT",
+      "description": "Phone number including country code",
+      "required": false,
+      "unique": false,
+      "max_length": 50,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "role",
+      "type": "TEXT",
+      "description": "How the user knows this person, e.g. colleague, client, investor, friend",
+      "required": false,
+      "unique": false,
+      "max_length": 200,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "organization",
+      "type": "TEXT",
+      "description": "Company or organisation this person belongs to",
+      "required": false,
+      "unique": false,
+      "max_length": 200,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "photo_url",
+      "type": "TEXT",
+      "description": "URL to profile photo \u2014 absolute URL, relative path like /photos/deepak.jpg, or pod file path like /pod/photos/id.jpg",
+      "required": false,
+      "unique": false,
+      "max_length": 2000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    },
+    {
+      "name": "notes",
+      "type": "TEXT",
+      "description": "Anything the agent should remember about this person",
+      "required": false,
+      "unique": false,
+      "max_length": 2000,
+      "auto": false,
+      "system": false,
+      "computed": false
+    }
+  ],
+  "config": null,
+  "enable_rls": true,
+  "visibility": "POD"
+}
