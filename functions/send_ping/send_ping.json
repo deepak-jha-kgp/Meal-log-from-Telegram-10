@@ -1,0 +1,100 @@
+{
+  "name": "send_ping",
+  "description": "Sends a message to a person via Slack DM or Gmail. Looks up the person's email from the people table, resolves their Slack user ID if needed, sends the message, and logs the ping to the pings table with thread IDs for later reply polling.",
+  "icon_url": null,
+  "config": null,
+  "visibility": "POD",
+  "code": "#input_type_name: SendPingInput\n#output_type_name: SendPingResult\n#function_name: send_ping\n\nimport os\nimport traceback\nimport httpx\nfrom pydantic import BaseModel\nfrom lemma_sdk import FunctionContext, Pod\nfrom typing import Optional\n\n\nclass SendPingInput(BaseModel):\n    person_id: str\n    message: str\n    channel: str = \"auto\"           # \"slack\" | \"gmail\" | \"auto\"\n    commitment_id: Optional[str] = None\n    subject: Optional[str] = None   # Gmail subject; defaults to \"Quick check-in\"\n\n\nclass SendPingResult(BaseModel):\n    sent: bool\n    channel_used: str\n    ping_id: Optional[str] = None\n    error: Optional[str] = None\n\n\nasync def _get_org_id(base_url: str, pod_id: str, headers: dict) -> str:\n    try:\n        async with httpx.AsyncClient(timeout=10) as client:\n            resp = await client.get(f\"{base_url}/pods/{pod_id}\", headers=headers)\n            org_id = resp.json().get(\"organization_id\", \"\")\n            if not org_id:\n                raise RuntimeError(\"Pod response did not contain organization_id\")\n            return org_id\n    except Exception as e:\n        raise RuntimeError(f\"Could not resolve org_id from pod: {e}\")\n\n\nasync def _exec_integration(base_url: str, org_id: str, headers: dict,\n                             integration: str, operation: str, payload: dict) -> dict:\n    async with httpx.AsyncClient(timeout=15) as client:\n        resp = await client.post(\n            f\"{base_url}/organizations/{org_id}/integrations/{integration}/operations/{operation}/execute\",\n            json={\"payload\": payload},\n            headers=headers,\n        )\n        if resp.status_code != 200:\n            raise RuntimeError(f\"[{resp.status_code}] {resp.text[:300]}\")\n        return resp.json().get(\"result\", {})\n\n\nasync def send_ping(ctx: FunctionContext, data: SendPingInput) -> SendPingResult:\n    pod = Pod.from_env()\n    base_url = os.environ.get(\"LEMMA_BASE_URL\", \"https://api.lemma.work\")\n    token    = os.environ.get(\"LEMMA_TOKEN\", \"\")\n    headers  = {\"Authorization\": f\"Bearer {token}\", \"Content-Type\": \"application/json\"}\n\n    # Look up person\n    person_raw = pod.table(\"people\").get(data.person_id).to_dict().get(\"data\", {})\n    if not person_raw:\n        return SendPingResult(sent=False, channel_used=\"\", error=\"Person not found\")\n\n    email = (person_raw.get(\"email\") or \"\").strip()\n    if not email:\n        return SendPingResult(sent=False, channel_used=\"\", error=\"Person has no email \u2014 add one first\")\n\n    try:\n        org_id = await _get_org_id(base_url, ctx.pod_id, headers)\n    except RuntimeError as e:\n        return SendPingResult(sent=False, channel_used=\"\", error=str(e))\n\n    channels = (\n        [\"slack\"]          if data.channel == \"slack\" else\n        [\"gmail\"]          if data.channel == \"gmail\" else\n        [\"slack\", \"gmail\"]                               # auto: Slack first\n    )\n\n    channel_used       = \"\"\n    slack_channel_id:  Optional[str] = None\n    slack_thread_ts:   Optional[str] = None\n    gmail_thread_id:   Optional[str] = None\n\n    for ch in channels:\n        if ch == \"slack\":\n            try:\n                lu = await _exec_integration(base_url, org_id, headers,\n                                             \"slack\", \"users_lookup_by_email\",\n                                             {\"email\": email})\n                slack_user_id = (lu.get(\"user\") or {}).get(\"id\")\n                if not slack_user_id:\n                    continue\n\n                msg = await _exec_integration(base_url, org_id, headers,\n                                              \"slack\", \"chat_post_message\",\n                                              {\"channel\": slack_user_id, \"text\": data.message})\n                slack_channel_id = msg.get(\"channel\")\n                slack_thread_ts  = msg.get(\"ts\")\n                channel_used = \"slack\"\n                break\n            except Exception as e:\n                print(f\"Slack send failed: {e}\")\n                continue\n\n        elif ch == \"gmail\":\n            try:\n                subject = data.subject or \"Quick check-in\"\n                result = await _exec_integration(base_url, org_id, headers,\n                                                 \"gmail\", \"GMAIL_SEND_EMAIL\",\n                                                 {\n                                                     \"recipient_email\": email,\n                                                     \"subject\": subject,\n                                                     \"body\": data.message,\n                                                 })\n                gmail_thread_id = (\n                    result.get(\"threadId\")\n                    or result.get(\"thread_id\")\n                    or result.get(\"id\")\n                )\n                channel_used = \"gmail\"\n                break\n            except Exception as e:\n                print(f\"Gmail send failed: {e}\")\n                continue\n\n    if not channel_used:\n        return SendPingResult(\n            sent=False,\n            channel_used=\"\",\n            error=\"Could not send \u2014 no connected channel reached this person\",\n        )\n\n    # Log ping\n    ping_data: dict = {\n        \"person_id\": data.person_id,\n        \"channel\":   channel_used,\n        \"message\":   data.message,\n    }\n    if data.commitment_id:\n        ping_data[\"commitment_id\"] = data.commitment_id\n    if slack_channel_id:\n        ping_data[\"slack_channel_id\"] = slack_channel_id\n    if slack_thread_ts:\n        ping_data[\"slack_thread_ts\"] = slack_thread_ts\n    if gmail_thread_id:\n        ping_data[\"gmail_thread_id\"] = gmail_thread_id\n\n    ping = pod.table(\"pings\").create(ping_data).to_dict().get(\"data\", {})\n    ping_id = str(ping.get(\"id\", \"\"))\n\n    return SendPingResult(sent=True, channel_used=channel_used, ping_id=ping_id)\n",
+  "type": "API",
+  "input_schema": {
+    "type": "object",
+    "title": "SendPingInput",
+    "required": [
+      "person_id",
+      "message"
+    ],
+    "properties": {
+      "channel": {
+        "type": "string",
+        "title": "Channel",
+        "default": "auto"
+      },
+      "message": {
+        "type": "string",
+        "title": "Message"
+      },
+      "subject": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Subject",
+        "default": null
+      },
+      "person_id": {
+        "type": "string",
+        "title": "Person Id"
+      },
+      "commitment_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Commitment Id",
+        "default": null
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "title": "SendPingResult",
+    "required": [
+      "sent",
+      "channel_used"
+    ],
+    "properties": {
+      "sent": {
+        "type": "boolean",
+        "title": "Sent"
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error",
+        "default": null
+      },
+      "ping_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ping Id",
+        "default": null
+      },
+      "channel_used": {
+        "type": "string",
+        "title": "Channel Used"
+      }
+    }
+  },
+  "config_schema": null,
+  "python_packages": []
+}
