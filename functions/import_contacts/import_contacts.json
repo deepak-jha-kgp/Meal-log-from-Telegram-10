@@ -1,0 +1,88 @@
+{
+  "name": "import_contacts",
+  "description": "Fetches contacts from Gmail and/or Slack and returns only those not already in the people table. Used by the ImportModal to populate the preview list before the user confirms.",
+  "icon_url": null,
+  "config": null,
+  "visibility": "POD",
+  "code": "#input_type_name: ImportContactsInput\n#output_type_name: ImportContactsResult\n#function_name: import_contacts\n\nimport os\nimport traceback\nfrom pydantic import BaseModel\nfrom lemma_sdk import FunctionContext, Pod\nfrom typing import Optional\n\ntry:\n    import httpx\n    _HAS_HTTPX = True\nexcept ImportError:\n    _HAS_HTTPX = False\n\n\nclass ImportContact(BaseModel):\n    name: str\n    email: str\n    organization: Optional[str] = None\n\n\nclass ImportContactsInput(BaseModel):\n    source: str = \"gmail\"  # \"gmail\" | \"slack\" | \"both\"\n\n\nclass ImportContactsResult(BaseModel):\n    contacts: list[ImportContact]\n    count: int\n    skipped: int\n    errors: list[str] = []\n\n\nasync def _get_org_id(base_url: str, pod_id: str, headers: dict) -> str:\n    try:\n        async with httpx.AsyncClient(timeout=10) as client:\n            resp = await client.get(f\"{base_url}/pods/{pod_id}\", headers=headers)\n            org_id = resp.json().get(\"organization_id\", \"\")\n            if not org_id:\n                raise RuntimeError(\"Pod response did not contain organization_id\")\n            return org_id\n    except Exception as e:\n        raise RuntimeError(f\"Could not resolve org_id from pod: {e}\")\n\n\nasync def import_contacts(ctx: FunctionContext, data: ImportContactsInput) -> ImportContactsResult:\n    pod = Pod.from_env()\n    base_url = os.environ.get(\"LEMMA_BASE_URL\", \"https://api.lemma.work\")\n    token    = os.environ.get(\"LEMMA_TOKEN\", \"\")\n    errors: list[str] = []\n\n    if not _HAS_HTTPX or not token:\n        return ImportContactsResult(contacts=[], count=0, skipped=0, errors=[\"httpx or token unavailable\"])\n\n    headers = {\"Authorization\": f\"Bearer {token}\", \"Content-Type\": \"application/json\"}\n\n    try:\n        org_id = await _get_org_id(base_url, ctx.pod_id, headers)\n    except RuntimeError as e:\n        return ImportContactsResult(contacts=[], count=0, skipped=0, errors=[str(e)])\n\n    print(f\"org_id: {org_id}\")\n\n    # Collect existing emails to deduplicate\n    existing_rows = pod.records.list(\"people\", limit=500).to_dict().get(\"items\", [])\n    existing_emails: set[str] = {\n        (r.get(\"email\") or \"\").lower().strip()\n        for r in existing_rows\n        if r.get(\"email\")\n    }\n    print(f\"Existing emails: {len(existing_emails)}\")\n\n    new_contacts: list[ImportContact] = []\n    seen_emails: set[str] = set()\n    skipped = 0\n\n    # \u2500\u2500 Gmail contacts \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    if data.source in (\"gmail\", \"both\"):\n        try:\n            async with httpx.AsyncClient(timeout=30) as client:\n                page_token: Optional[str] = None\n                total_fetched = 0\n                for page_num in range(3):\n                    payload: dict = {\"page_size\": 100}\n                    if page_token:\n                        payload[\"page_token\"] = page_token\n\n                    resp = await client.post(\n                        f\"{base_url}/organizations/{org_id}/integrations/gmail/operations/GMAIL_GET_CONTACTS/execute\",\n                        json={\"payload\": payload},\n                        headers=headers,\n                    )\n                    if resp.status_code != 200:\n                        errors.append(f\"Gmail page {page_num+1} error {resp.status_code}: {resp.text[:200]}\")\n                        break\n\n                    raw = resp.json().get(\"result\", {})\n                    connections = raw.get(\"connections\", [])\n                    total_fetched += len(connections)\n                    print(f\"Gmail page {page_num+1}: {len(connections)} connections\")\n\n                    for c in connections:\n                        emails_field = c.get(\"emailAddresses\", [])\n                        if not emails_field:\n                            continue\n                        email = (emails_field[0].get(\"value\") or \"\").lower().strip()\n                        if not email:\n                            continue\n\n                        names_field = c.get(\"names\", [])\n                        name = (names_field[0].get(\"displayName\") or \"\").strip() if names_field else \"\"\n                        if not name:\n                            name = email.split(\"@\")[0]\n\n                        orgs_field = c.get(\"organizations\", [])\n                        org = (orgs_field[0].get(\"name\") or \"\").strip() if orgs_field else None\n\n                        if email in existing_emails or email in seen_emails:\n                            skipped += 1\n                            continue\n\n                        seen_emails.add(email)\n                        new_contacts.append(ImportContact(name=name, email=email, organization=org or None))\n\n                    page_token = raw.get(\"nextPageToken\")\n                    if not page_token:\n                        break\n\n                print(f\"Gmail done: {total_fetched} fetched, {len(new_contacts)} new, {skipped} skipped\")\n        except Exception:\n            errors.append(f\"Gmail error: {traceback.format_exc()[:400]}\")\n\n    # \u2500\u2500 Slack users \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    if data.source in (\"slack\", \"both\"):\n        try:\n            async with httpx.AsyncClient(timeout=30) as client:\n                cursor: Optional[str] = None\n                slack_start = len(new_contacts)\n                for _ in range(5):\n                    payload = {\"limit\": 200}\n                    if cursor:\n                        payload[\"cursor\"] = cursor\n\n                    resp = await client.post(\n                        f\"{base_url}/organizations/{org_id}/integrations/slack/operations/users_list/execute\",\n                        json={\"payload\": payload},\n                        headers=headers,\n                    )\n                    if resp.status_code != 200:\n                        errors.append(f\"Slack error {resp.status_code}: {resp.text[:200]}\")\n                        break\n\n                    raw = resp.json().get(\"result\", {})\n                    members = raw.get(\"members\", [])\n                    print(f\"Slack batch: {len(members)} members\")\n\n                    for m in members:\n                        if m.get(\"is_bot\") or m.get(\"deleted\") or m.get(\"id\") == \"USLACKBOT\":\n                            continue\n                        profile = m.get(\"profile\") or {}\n                        email = (profile.get(\"email\") or \"\").lower().strip()\n                        if not email:\n                            continue\n\n                        name = (m.get(\"real_name\") or profile.get(\"real_name\") or \"\").strip()\n                        if not name:\n                            name = email.split(\"@\")[0]\n\n                        if email in existing_emails or email in seen_emails:\n                            skipped += 1\n                            continue\n\n                        seen_emails.add(email)\n                        new_contacts.append(ImportContact(name=name, email=email))\n\n                    cursor = (raw.get(\"response_metadata\") or {}).get(\"next_cursor\")\n                    if not cursor:\n                        break\n                print(f\"Slack done: {len(new_contacts) - slack_start} new\")\n        except Exception:\n            errors.append(f\"Slack error: {traceback.format_exc()[:400]}\")\n\n    print(f\"Final: {len(new_contacts)} new contacts, {skipped} skipped\")\n    return ImportContactsResult(\n        contacts=new_contacts,\n        count=len(new_contacts),\n        skipped=skipped,\n        errors=errors,\n    )\n",
+  "type": "API",
+  "input_schema": {
+    "type": "object",
+    "title": "ImportContactsInput",
+    "properties": {
+      "source": {
+        "type": "string",
+        "title": "Source",
+        "default": "gmail"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "$defs": {
+      "ImportContact": {
+        "type": "object",
+        "title": "ImportContact",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization",
+            "default": null
+          }
+        }
+      }
+    },
+    "title": "ImportContactsResult",
+    "required": [
+      "contacts",
+      "count",
+      "skipped"
+    ],
+    "properties": {
+      "count": {
+        "type": "integer",
+        "title": "Count"
+      },
+      "errors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Errors",
+        "default": []
+      },
+      "skipped": {
+        "type": "integer",
+        "title": "Skipped"
+      },
+      "contacts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ImportContact"
+        },
+        "title": "Contacts"
+      }
+    }
+  },
+  "config_schema": null,
+  "python_packages": []
+}
