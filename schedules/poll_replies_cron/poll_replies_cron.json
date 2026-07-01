@@ -1,0 +1,12 @@
+{
+  "name": "poll_replies_cron",
+  "schedule_type": "TIME",
+  "agent_name": null,
+  "workflow_name": "poll-replies",
+  "config": {
+    "cron": "0 */2 * * *"
+  },
+  "filter_instruction": null,
+  "filter_output_schema": null,
+  "visibility": "POD"
+}
