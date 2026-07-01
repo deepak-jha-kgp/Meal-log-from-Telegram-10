@@ -1,0 +1,21 @@
+{
+  "format_version": 2,
+  "name": "Meal log from Telegram",
+  "description": "Text what you ate to a Telegram bot; ask \u201chow did I eat this week?\u201d anytime, or open a simple log.",
+  "icon_url": null,
+  "requirements": {},
+  "capabilities": [
+    {
+      "tier": "code",
+      "summary": "Run 4 Python functions"
+    },
+    {
+      "tier": "ai",
+      "summary": "Run 1 AI agent"
+    },
+    {
+      "tier": "data",
+      "summary": "Create 5 tables"
+    }
+  ]
+}
